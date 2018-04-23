@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import datetime
+import dateutil.tz
 import json
 import os
 import pprint
@@ -13,10 +15,13 @@ class SonarQubeReport:
         self.userToken = userToken
         self.projectKey = projectKey
         self.projectName = projectName
+        self.textReportPath = "{0}-report.txt".format(self.projectKey)
         self.severities = ["BLOCKER", "CRITICAL", "MAJOR", "MINOR", "INFO"] 
         self.issues = None
         self.analysis = None
         self.stats = None
+        tsUtc = datetime.datetime.now(datetime.timezone.utc)
+        ts = tsUtc.astimezone()
         
     def callApi(self, api):
         url = "{0}/api/{1}".format(self.url, api)
@@ -39,6 +44,13 @@ class SonarQubeReport:
         response = self.callApi(api)
         return response
 
+    def getDateTime(self, utcFormat=False):
+        tsUtc = datetime.datetime.now(datetime.timezone.utc)
+        ts = tsUtc.astimezone()
+        if utcFormat:
+           return tsUtc.isoformat() 
+        return ts.isoformat()
+ 
     def getIssues(self):
         api = "issues/search?projectKeys={0}&types=VULNERABILITY" \
               "&ps=500&s=SEVERITY&statuses=OPEN&facets=severities,rules,languages" \
@@ -59,21 +71,24 @@ class SonarQubeReport:
         return self.issues
 
     def writeTextReport(self):
-        report = """
-Project:     {0}
-Scan Date:   ???
-Report Date: ???
-Total: {1}""".format(
+        with open(self.textReportPath, "w", encoding="utf-8") as fd:
+            report = """[SonarQube SAST Vulnerability Report]
+
+Project: {0}
+Date:    {1}
+
+Vulnerabilities: {2}""".format(
 self.projectName,
+self.getDateTime(True),
 self.stats["total"])
-        for severity in self.severities:
-            report = "{0}\n  -{1}: {2}".format(report, severity.title(), self.stats[severity]) 
-        print(report)
-        for severity in self.severities:
-            if not severity in self.issues:
-                continue
-            for issue in self.issues[severity]:
-                report = '''
+            for severity in self.severities:
+                report = "{0}\n  -{1}: {2}".format(report, severity.title(), self.stats[severity]) 
+            fd.write(report)
+            for severity in self.severities:
+                if not severity in self.issues:
+                    continue
+                for issue in self.issues[severity]:
+                    report = '''
 ----------------------------------------------------------
 [{0} {1}]
 
@@ -94,4 +109,4 @@ issue["rule"],
 ', '.join(issue["tags"]).strip(),
 issue["status"].title()
 )  
-                print(report)
+                    fd.write(report)
